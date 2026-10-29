@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ionized Plasma Wakefield Simulation & Map</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for 1D line plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        plasma: {
+                            dark: '#0a0d14',
+                            card: '#121824',
+                            border: '#1f293d',
+                            accent: '#6366f1',
+                            glow: '#38bdf8'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #06090e;
+            color: #e2e8f0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            overflow-x: hidden;
+        }
+        canvas {
+            touch-action: none;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0a0d14;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1f293d;
+            border-radius: 3px;
+        }
+        .glass-panel {
+            background: rgba(18, 24, 36, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col custom-scrollbar">
+
+    <!-- Top Navigation Header -->
+    <header class="glass-panel sticky top-0 z-50 px-6 py-3 flex flex-wrap items-center justify-between border-b border-plasma-border">
+        <div class="flex items-center space-x-3">
+            <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+                <i data-lucide="zap" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg text-white tracking-wide flex items-center gap-2">
+                    PlasmaWake-Lab <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">v2.4 2D-CFD</span>
+                </h1>
+                <p class="text-xs text-slate-400">Interactive Ionized Plasma Wakefield Simulation & Spatial Map</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4 mt-2 sm:mt-0">
+            <!-- View Mode Switcher -->
+            <div class="flex bg-slate-900/90 p-1 rounded-lg border border-slate-800 text-xs font-medium">
+                <button id="btn-view-heatmap" class="px-3 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition">
+                    <i data-lucide="layers" class="w-3.5 h-3.5"></i> Heatmap Map
+                </button>
+                <button id="btn-view-vectors" class="px-3 py-1.5 rounded-md text-slate-400 hover:text-white flex items-center gap-1.5 transition">
+                    <i data-lucide="compass" class="w-3.5 h-3.5"></i> Vector Field
+                </button>
+            </div>
+
+            <!-- Simulation Play/Pause Controls -->
+            <button id="btn-play-pause" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-900/30">
+                <i data-lucide="pause" id="icon-play-pause" class="w-4 h-4"></i>
+                <span id="label-play-pause">Pause</span>
+            </button>
+            <button id="btn-reset" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg text-xs flex items-center gap-1.5 transition border border-slate-700">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-[1920px] mx-auto w-full">
+
+        <!-- Left Controls Sidebar (1 Col on Desktop) -->
+        <aside class="lg:col-span-1 flex flex-col space-y-5">
+            
+            <!-- Driver Parameters Card -->
+            <div class="glass-panel p-5 rounded-xl border border-plasma-border space-y-4 shadow-xl">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400 flex items-center gap-2">
+                    <i data-lucide="sliders" class="w-4 h-4"></i> Driver Pulse Parameters
+                </h2>
+
+                <!-- Driver Intensity -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs">
+                        <label for="input-intensity" class="text-slate-300 font-medium">Pulse Intensity ($a_0$)</label>
+                        <span id="val-intensity" class="text-indigo-300 font-mono">2.00</span>
+                    </div>
+                    <input type="range" id="input-intensity" min="0.5" max="5.0" step="0.1" value="2.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <p class="text-[10px] text-slate-500">Normalised laser vector potential or beam charge parameter</p>
+                </div>
+
+                <!-- Driver Speed -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs">
+                        <label for="input-speed" class="text-slate-300 font-medium">Driver Velocity ($v_d / c$)</label>
+                        <span id="val-speed" class="text-indigo-300 font-mono">0.98</span>
+                    </div>
+                    <input type="range" id="input-speed" min="0.80" max="0.999" step="0.005" value="0.98" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <p class="text-[10px] text-slate-500">Driver pulse propagation velocity relative to speed of light</p>
+                </div>
+
+                <!-- Pulse Width -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs">
+                        <label for="input-width" class="text-slate-300 font-medium">Pulse Length ($\sigma_z$)</label>
+                        <span id="val-width" class="text-indigo-300 font-mono">1.20 µm</span>
+                    </div>
+                    <input type="range" id="input-width" min="0.4" max="3.0" step="0.1" value="1.2" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <p class="text-[10px] text-slate-500">Spatial longitudinal width of the driving pulse</p>
+                </div>
+            </div>
+
+            <!-- Plasma Target Medium Parameters -->
+            <div class="glass-panel p-5 rounded-xl border border-plasma-border space-y-4 shadow-xl">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-teal-400 flex items-center gap-2">
+                    <i data-lucide="atom" class="w-4 h-4"></i> Target Plasma Medium
+                </h2>
+
+                <!-- Plasma Density -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs">
+                        <label for="input-density" class="text-slate-300 font-medium">Plasma Density ($n_e$)</label>
+                        <span id="val-density" class="text-teal-300 font-mono">1.00 × 10¹⁸ /cm³</span>
+                    </div>
+                    <input type="range" id="input-density" min="0.2" max="3.0" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                    <p class="text-[10px] text-slate-500">Controls plasma frequency $\omega_p$ and skin depth $c/\omega_p$</p>
+                </div>
+
+                <!-- Channel Ramp -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs">
+                        <label for="input-damping" class="text-slate-300 font-medium">Collision Damping ($\nu_{ei}$)</label>
+                        <span id="val-damping" class="text-teal-300 font-mono">0.02</span>
+                    </div>
+                    <input type="range" id="input-damping" min="0.00" max="0.1" step="0.005" value="0.02" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                    <p class="text-[10px] text-slate-500">Electron-ion collision/damping factor behind bubble</p>
+                </div>
+            </div>
+
+            <!-- Physical Diagnostics & Readouts -->
+            <div class="glass-panel p-5 rounded-xl border border-plasma-border space-y-3 shadow-xl">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                    <i data-lucide="activity" class="w-4 h-4"></i> Real-time Diagnostics
+                </h2>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                        <div class="text-slate-400 text-[10px]">Plasma Wavelength ($\lambda_p$)</div>
+                        <div id="stat-lambda" class="text-sm font-mono text-amber-300 font-semibold mt-0.5">33.4 µm</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                        <div class="text-slate-400 text-[10px]">Max Electric Field ($E_z$)</div>
+                        <div id="stat-ez" class="text-sm font-mono text-amber-300 font-semibold mt-0.5">96.2 GV/m</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                        <div class="text-slate-400 text-[10px]">Bubble Radius ($R_b$)</div>
+                        <div id="stat-bubble" class="text-sm font-mono text-amber-300 font-semibold mt-0.5">14.2 µm</div>
+                    </div>
+                    <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                        <div class="text-slate-400 text-[10px]">Plasma Frequency ($\omega_p$)</div>
+                        <div id="stat-freq" class="text-sm font-mono text-amber-300 font-semibold mt-0.5">5.64 THz</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Main Visual Simulation Area (3 Cols on Desktop) -->
+        <section class="lg:col-span-3 flex flex-col space-y-6">
+
+            <!-- 2D Canvas Heatmap / Vector Display -->
+            <div class="glass-panel p-4 rounded-xl border border-plasma-border flex flex-col space-y-3 relative shadow-2xl">
+                <div class="flex items-center justify-between px-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                        <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wide">
+                            2D Spatial Map: <span id="map-mode-label" class="text-indigo-400">Electron Density $\Delta n_e / n_0$</span>
+                        </h3>
+                    </div>
+
+                    <!-- Colorbar Scale Legend -->
+                    <div class="flex items-center space-x-2 text-xs text-slate-400">
+                        <span>Depleted Ion Bubble</span>
+                        <div class="w-28 h-3 rounded border border-slate-700" style="background: linear-gradient(to right, #020617, #1e1b4b, #4338ca, #06b6d4, #fef08a, #ef4444);"></div>
+                        <span>Density Spike</span>
+                    </div>
+                </div>
+
+                <!-- 2D Canvas Workspace -->
+                <div class="relative w-full aspect-[2/1] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden group">
+                    <canvas id="canvas-2d" class="w-full h-full block cursor-crosshair"></canvas>
+
+                    <!-- Hover Coordinate Tooltip -->
+                    <div id="canvas-tooltip" class="absolute hidden pointer-events-none glass-panel p-2.5 rounded-lg border border-indigo-500/40 text-xs shadow-2xl z-20 space-y-1">
+                        <div id="tooltip-coords" class="font-mono text-indigo-300 font-semibold">x: 0.0 µm, y: 0.0 µm</div>
+                        <div id="tooltip-density" class="text-slate-300">Density $\Delta n/n_0$: <span class="font-mono text-white">0.00</span></div>
+                        <div id="tooltip-ez" class="text-slate-300">Accel Field $E_z$: <span class="font-mono text-emerald-400">0.0 GV/m</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1D Plotting Diagnostics Panel -->
+            <div class="glass-panel p-4 rounded-xl border border-plasma-border flex flex-col space-y-2 shadow-2xl">
+                <div class="flex items-center justify-between px-2">
+                    <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wide flex items-center gap-2">
+                        <i data-lucide="line-chart" class="w-4 h-4 text-emerald-400"></i> Longitudinal 1D Cut Axis (Centerline $y = 0$)
+                    </h3>
+                    <div class="flex items-center gap-4 text-xs">
+                        <span class="flex items-center gap-1.5 text-indigo-400 font-medium">
+                            <span class="w-3 h-0.5 bg-indigo-500 inline-block"></span> Density ($\Delta n_e$)
+                        </span>
+                        <span class="flex items-center gap-1.5 text-emerald-400 font-medium">
+                            <span class="w-3 h-0.5 bg-emerald-400 inline-block"></span> Accelerating Field ($E_z$)
+                        </span>
+                        <span class="flex items-center gap-1.5 text-amber-400 font-medium">
+                            <span class="w-3 h-0.5 bg-amber-400 inline-block"></span> Wake Potential ($\Phi$)
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Chart.js Canvas -->
+                <div class="w-full h-56 relative bg-slate-950/50 rounded-lg p-2 border border-slate-800">
+                    <canvas id="chart-1d"></canvas>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Footer Explanation -->
+    <footer class="p-4 border-t border-plasma-border text-center text-xs text-slate-500 glass-panel mt-auto">
+        <p>Simulation uses a 2D non-linear quasi-static fluid plasma model. Ion bubble cavity formed by relativistic pondermotive blowout.</p>
+    </footer>
+
+    <!-- Simulation Script Logic -->
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Canvas & Context Setups
+        const canvas = document.getElementById('canvas-2d');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('canvas-tooltip');
+
+        // State & Parameter Variables
+        let isRunning = true;
+        let viewMode = 'heatmap'; // 'heatmap' or 'vectors'
+        let animationFrameId = null;
+
+        // Physical Parameters
+        let params = {
+            a0: 2.0,            // Driver intensity
+            v_d: 0.98,          // Velocity
+            sigma_z: 1.2,       // Pulse width
+            density: 1.0,       // Baseline plasma density (10^18 cm^-3)
+            damping: 0.02,      // Damping factor
+            driverX: 120        // Driver longitudinal position in grid units
+        };
+
+        // Grid Dimensions
+        const gridX = 240;
+        const gridY = 120;
+        let densityGrid = new Float32Array(gridX * gridY);
+        let ezGrid = new Float32Array(gridX * gridY);
+        let exGrid = new Float32Array(gridX * gridY);
+        let phiGrid = new Float32Array(gridX * gridY);
+
+        // Chart.js Setup
+        const chartCtx = document.getElementById('chart-1d').getContext('2d');
+        const chart1D = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: gridX}, (_, i) => ((i - 120) * 0.5).toFixed(1)),
+                datasets: [
+                    {
+                        label: 'Density Perturbation',
+                        data: [],
+                        borderColor: '#6366f1',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Accel Field Ez (GV/m)',
+                        data: [],
+                        borderColor: '#34d399',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        yAxisID: 'y1'
+                    },
+                    {
+                        label: 'Potential Phi',
+                        data: [],
+                        borderColor: '#fbbf24',
+                        borderWidth: 1.5,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        tension: 0.3,
+                        yAxisID: 'y'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: {
+                        grid: { color: '#1e293b' },
+                        ticks: { color: '#64748b', font: { size: 10 } },
+                        title: { display: true, text: 'Longitudinal Distance z - vt (µm)', color: '#94a3b8', font: { size: 10 } }
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: '#1e293b' },
+                        ticks: { color: '#818cf8', font: { size: 10 } },
+                        title: { display: true, text: 'Normalized Density / Potential', color: '#818cf8', font: { size: 10 } }
+                    },
+                    y1: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#34d399', font: { size: 10 } },
+                        title: { display: true, text: 'Ez Field (GV/m)', color: '#34d399', font: { size: 10 } }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true, mode: 'index', intersect: false }
+                }
+            }
+        });
+
+        // Compute Physics Field Arrays
+        function computeFields() {
+            const kp = Math.sqrt(params.density) * 0.45; // Wavenumber
+            const bubbleRadius = 10 * Math.sqrt(params.a0) / Math.pow(params.density, 0.25);
+            
+            for (let x = 0; x < gridX; x++) {
+                for (let y = 0; y < gridY; y++) {
+                    const idx = y * gridX + x;
+                    
+                    // Coordinates relative to driver center
+                    const rx = x - params.driverX;
+                    const ry = y - gridY / 2;
+                    const r = Math.sqrt(rx * rx + ry * ry);
+
+                    // 1. Driver Laser Pulse Envelope
+                    const driverPulse = params.a0 * Math.exp(-(rx * rx) / (2 * params.sigma_z * params.sigma_z * 16) - (ry * ry) / 100);
+
+                    // 2. Non-linear Blowout Bubble Cavity Model
+                    let density = 0;
+                    let ez = 0;
+                    let phi = 0;
+
+                    if (rx < 0) {
+                        // Trailing wakefield region behind driver
+                        const phase = kp * Math.abs(rx);
+                        const dampingFactor = Math.exp(-params.damping * Math.abs(rx));
+
+                        if (r < bubbleRadius) {
+                            // Completely depleted electron cavity (Ion Bubble)
+                            density = -1.0; 
+                            ez = 0.5 * rx * params.density * 12; // Linear accelerating field inside bubble
+                            phi = 0.25 * (bubbleRadius * bubbleRadius - r * r);
+                        } else if (r >= bubbleRadius && r < bubbleRadius + 3) {
+                            // Dense electron sheath surrounding bubble
+                            density = 3.5 * params.a0 * Math.exp(-Math.pow(r - bubbleRadius, 2) / 2);
+                            ez = -20 * Math.sin(phase) * dampingFactor;
+                            phi = -0.5 * Math.cos(phase);
+                        } else {
+                            // Trailing plasma oscillations
+                            const transverseDecay = Math.exp(-(ry * ry) / 400);
+                            density = 1.2 * Math.sin(phase) * dampingFactor * transverseDecay;
+                            ez = -35 * Math.sin(phase) * dampingFactor * transverseDecay;
+                            phi = 0.8 * Math.cos(phase) * dampingFactor * transverseDecay;
+                        }
+                    } else {
+                        // Ahead of driver
+                        density = driverPulse * 1.5;
+                        ez = -5 * driverPulse;
+                        phi = driverPulse;
+                    }
+
+                    densityGrid[idx] = density;
+                    ezGrid[idx] = ez;
+                    phiGrid[idx] = phi;
+                }
+            }
+
+            // Update Diagnostic Numerical Counters
+            document.getElementById('stat-lambda').innerText = (33.4 / Math.sqrt(params.density)).toFixed(1) + ' µm';
+            document.getElementById('stat-ez').innerText = (96.2 * Math.sqrt(params.density) * (params.a0 / 2)).toFixed(1) + ' GV/m';
+            document.getElementById('stat-bubble').innerText = (14.2 * Math.sqrt(params.a0) / Math.pow(params.density, 0.25)).toFixed(1) + ' µm';
+            document.getElementById('stat-freq').innerText = (5.64 * Math.sqrt(params.density)).toFixed(2) + ' THz';
+        }
+
+        // Color Mapping Function for Heatmap Rendering
+        function getColorForDensity(val) {
+            // val ranges from -1.0 (empty) to +3.5 (dense spike)
+            const norm = Math.max(0, Math.min(1, (val + 1.0) / 4.5));
+            
+            let r = 0, g = 0, b = 0;
+            if (norm < 0.2) {
+                // Deep Ion Bubble Cavity (Dark Navy to Purple)
+                const t = norm / 0.2;
+                r = Math.floor(2 + 25 * t);
+                g = Math.floor(6 + 20 * t);
+                b = Math.floor(23 + 70 * t);
+            } else if (norm < 0.5) {
+                // Moderate Density (Indigo to Cyan)
+                const t = (norm - 0.2) / 0.3;
+                r = Math.floor(27 + 30 * t);
+                g = Math.floor(26 + 150 * t);
+                b = Math.floor(93 + 120 * t);
+            } else if (norm < 0.8) {
+                // High Density Sheath (Cyan to Bright Yellow)
+                const t = (norm - 0.5) / 0.3;
+                r = Math.floor(57 + 195 * t);
+                g = Math.floor(176 + 70 * t);
+                b = Math.floor(213 - 150 * t);
+            } else {
+                // Extreme Spike (Yellow to Intense Red)
+                const t = (norm - 0.8) / 0.2;
+                r = 252;
+                g = Math.floor(246 * (1 - t));
+                b = Math.floor(63 * (1 - t));
+            }
+            return `rgb(${r},${g},${b})`;
+        }
+
+        // Render Canvas Graphics
+        function renderCanvas() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const cellW = width / gridX;
+            const cellH = height / gridY;
+
+            ctx.clearRect(0, 0, width, height);
+
+            if (viewMode === 'heatmap') {
+                // Draw 2D Density Heatmap
+                for (let y = 0; y < gridY; y++) {
+                    for (let x = 0; x < gridX; x++) {
+                        const idx = y * gridX + x;
+                        const val = densityGrid[idx];
+                        ctx.fillStyle = getColorForDensity(val);
+                        ctx.fillRect(x * cellW, y * cellH, cellW + 0.5, cellH + 0.5);
+                    }
+                }
+
+                // Draw Driver Pulse Glow Marker
+                const driverPx = params.driverX * cellW;
+                const driverPy = (gridY / 2) * cellH;
+                const gradient = ctx.createRadialGradient(driverPx, driverPy, 2, driverPx, driverPy, 28);
+                gradient.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
+                gradient.addColorStop(0.5, 'rgba(245, 158, 11, 0.4)');
+                gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(driverPx, driverPy, 28, 0, Math.PI * 2);
+                ctx.fill();
+
+            } else if (viewMode === 'vectors') {
+                // Draw Electric Field Vector Arrow Map
+                ctx.fillStyle = '#06090e';
+                ctx.fillRect(0, 0, width, height);
+
+                const step = 6;
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 1;
+
+                for (let y = step / 2; y < gridY; y += step) {
+                    for (let x = step / 2; x < gridX; x += step) {
+                        const idx = Math.floor(y) * gridX + Math.floor(x);
+                        const ez = ezGrid[idx];
+                        const px = x * cellW;
+                        const py = y * cellH;
+
+                        // Draw vector arrows scaled by Ez
+                        const arrowLen = Math.max(-12, Math.min(12, ez * 0.4));
+                        ctx.beginPath();
+                        ctx.moveTo(px, py);
+                        ctx.lineTo(px + arrowLen, py);
+                        ctx.stroke();
+
+                        // Arrow head
+                        if (Math.abs(arrowLen) > 3) {
+                            ctx.fillStyle = ez > 0 ? '#34d399' : '#f43f5e';
+                            ctx.beginPath();
+                            ctx.arc(px + arrowLen, py, 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                }
+            }
+
+            // Draw Central Cutline Indicator
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(0, height / 2);
+            ctx.lineTo(width, height / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Update 1D Diagnostics Chart
+        function update1DChart() {
+            const centerY = Math.floor(gridY / 2);
+            const densityCut = [];
+            const ezCut = [];
+            const phiCut = [];
+
+            for (let x = 0; x < gridX; x++) {
+                const idx = centerY * gridX + x;
+                densityCut.push(densityGrid[idx]);
+                ezCut.push(ezGrid[idx]);
+                phiCut.push(phiGrid[idx]);
+            }
+
+            chart1D.data.datasets[0].data = densityCut;
+            chart1D.data.datasets[1].data = ezCut;
+            chart1D.data.datasets[2].data = phiCut;
+            chart1D.update('none'); // Update without full redraw animation for performance
+        }
+
+        // Main Simulation Loop
+        function animate() {
+            if (isRunning) {
+                // Advance driver position to simulate real-time propagation
+                params.driverX += params.v_d * 1.8;
+                if (params.driverX > gridX + 40) {
+                    params.driverX = 20; // Loop back driver
+                }
+            }
+
+            computeFields();
+            renderCanvas();
+            update1DChart();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // Window & Canvas Resize Handler
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            renderCanvas();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // Event Listeners for Interactive Controls
+        document.getElementById('input-intensity').addEventListener('input', (e) => {
+            params.a0 = parseFloat(e.target.value);
+            document.getElementById('val-intensity').innerText = params.a0.toFixed(2);
+        });
+
+        document.getElementById('input-speed').addEventListener('input', (e) => {
+            params.v_d = parseFloat(e.target.value);
+            document.getElementById('val-speed').innerText = params.v_d.toFixed(3);
+        });
+
+        document.getElementById('input-width').addEventListener('input', (e) => {
+            params.sigma_z = parseFloat(e.target.value);
+            document.getElementById('val-width').innerText = params.sigma_z.toFixed(2) + ' µm';
+        });
+
+        document.getElementById('input-density').addEventListener('input', (e) => {
+            params.density = parseFloat(e.target.value);
+            document.getElementById('val-density').innerText = params.density.toFixed(2) + ' × 10¹⁸ /cm³';
+        });
+
+        document.getElementById('input-damping').addEventListener('input', (e) => {
+            params.damping = parseFloat(e.target.value);
+            document.getElementById('val-damping').innerText = params.damping.toFixed(3);
+        });
+
+        // View Mode Toggle Buttons
+        const btnHeatmap = document.getElementById('btn-view-heatmap');
+        const btnVectors = document.getElementById('btn-view-vectors');
+        const modeLabel = document.getElementById('map-mode-label');
+
+        btnHeatmap.addEventListener('click', () => {
+            viewMode = 'heatmap';
+            btnHeatmap.className = 'px-3 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition';
+            btnVectors.className = 'px-3 py-1.5 rounded-md text-slate-400 hover:text-white flex items-center gap-1.5 transition';
+            modeLabel.innerText = 'Electron Density Δne / n0';
+        });
+
+        btnVectors.addEventListener('click', () => {
+            viewMode = 'vectors';
+            btnVectors.className = 'px-3 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition';
+            btnHeatmap.className = 'px-3 py-1.5 rounded-md text-slate-400 hover:text-white flex items-center gap-1.5 transition';
+            modeLabel.innerText = 'Electric Field Vector Map (Ez)';
+        });
+
+        // Play/Pause & Reset Buttons
+        const btnPlayPause = document.getElementById('btn-play-pause');
+        const iconPlayPause = document.getElementById('icon-play-pause');
+        const labelPlayPause = document.getElementById('label-play-pause');
+
+        btnPlayPause.addEventListener('click', () => {
+            isRunning = !isRunning;
+            if (isRunning) {
+                iconPlayPause.setAttribute('data-lucide', 'pause');
+                labelPlayPause.innerText = 'Pause';
+                btnPlayPause.className = 'px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-900/30';
+            } else {
+                iconPlayPause.setAttribute('data-lucide', 'play');
+                labelPlayPause.innerText = 'Resume';
+                btnPlayPause.className = 'px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 transition shadow-lg shadow-indigo-900/30';
+            }
+            lucide.createIcons();
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            params.driverX = 30;
+            if (!isRunning) {
+                computeFields();
+                renderCanvas();
+                update1DChart();
+            }
+        });
+
+        // Interactive Hover Tooltip Logic
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            const gridPosPointX = Math.floor((clickX / canvas.width) * gridX);
+            const gridPosPointY = Math.floor((clickY / canvas.height) * gridY);
+
+            if (gridPosPointX >= 0 && gridPosPointX < gridX && gridPosPointY >= 0 && gridPosPointY < gridY) {
+                const idx = gridPosPointY * gridX + gridPosPointX;
+                
+                const physX = ((gridPosPointX - params.driverX) * 0.5).toFixed(1);
+                const physY = ((gridPosPointY - gridY / 2) * 0.5).toFixed(1);
+
+                document.getElementById('tooltip-coords').innerText = `z: ${physX} µm, y: ${physY} µm`;
+                document.getElementById('tooltip-density').innerHTML = `Density $\\Delta n/n_0$: <span class="font-mono text-white">${densityGrid[idx].toFixed(2)}</span>`;
+                document.getElementById('tooltip-ez').innerHTML = `Accel Field $E_z$: <span class="font-mono text-emerald-400">${ezGrid[idx].toFixed(1)} GV/m</span>`;
+
+                tooltip.style.left = `${Math.min(clickX + 15, rect.width - 160)}px`;
+                tooltip.style.top = `${Math.min(clickY + 15, rect.height - 80)}px`;
+                tooltip.classList.remove('hidden');
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            tooltip.classList.add('hidden');
+        });
+
+        // Initialize App
+        resizeCanvas();
+        animate();
+    </script>
+</body>
+</html>
